@@ -25,10 +25,12 @@ swiped_db = {}
 user_bot_style = {} 
 messages_map = {}
 
-# Состояния (FSM)
+# Состояния (FSM) - Добавили gender и grade
 class ProfileForm(StatesGroup):
     name = State()
     age = State()
+    gender = State()
+    grade = State()
     about = State()
     goal = State()
     photo = State()
@@ -45,7 +47,6 @@ TEXTS = {
         "start": "Йоу, {name}! Я Лицейский Мэтч. Готов найти пару?",
         "ask_name": "Погнали! Как тебя зовут?",
         "ask_age": "Сколько тебе лет?",
-        "ask_about": "Расскажи пару слов о себе:",
         "ask_photo": "Кинь свою фотку для анкеты (отправь как фото):",
         "done": "Анкета готова! 🎉",
         "match": "🎉 МЭТЧ! Вы понравились друг другу!"
@@ -54,7 +55,6 @@ TEXTS = {
         "start": "Приветик, {name} 😘 Я твой личный сваха-бот. Погнали искать любовь?",
         "ask_name": "Как зовут моего пупсика?",
         "ask_age": "Сколько тебе годиков, конфетка?",
-        "ask_about": "Расскажи, чем ты так цепляешь людей? 😏",
         "ask_photo": "А теперь скинь свою самую сочную аватарку 💋",
         "done": "Ммм, выглядишь потрясно! Анкета готова 🥵",
         "match": "🔥 МЭТЧ! Пупсик, вы созданы друг для друга!"
@@ -63,7 +63,6 @@ TEXTS = {
         "start": "Йоу, {name} 🖤 Я Лицейский Мэтч. Тут не кринжуют, а ищут свою родственную душу.",
         "ask_name": "Как тебя величать, дед инсайд?",
         "ask_age": "Сколько тебе лет?",
-        "ask_about": "Напиши что-нибудь эдакое. Че ты за вайб?",
         "ask_photo": "Закинь фотку, где ты максимально на стиле. Жду.",
         "done": "Окей, база. Твоя анкета в деле 🕸",
         "match": "💀 МЭТЧ! Вы нашли друг друга в этом жестоком мире."
@@ -72,7 +71,6 @@ TEXTS = {
         "start": "Yo {name}! I'm the Lyceum Match bot. Ready to find a date?",
         "ask_name": "Let's go! What's your name?",
         "ask_age": "How old are you?",
-        "ask_about": "Tell me a bit about yourself:",
         "ask_photo": "Drop your best pic for the profile:",
         "done": "Profile is ready! 🎉",
         "match": "🎉 IT'S A MATCH! You liked each other!"
@@ -81,7 +79,6 @@ TEXTS = {
         "start": "Салам, {name}! Мен Лицей Мэтч ботумун. Жуп табабызбы?",
         "ask_name": "Атың ким?",
         "ask_age": "Жашың нечеде?",
-        "ask_about": "Өзүң жөнүндө эки ооз сүйлөп бер:",
         "ask_photo": "Анкетаңа сүрөтүңдү жөнөт:",
         "done": "Анкета даяр! 🎉",
         "match": "🎉 МЭТЧ! Тил табыштыңар!"
@@ -195,7 +192,7 @@ async def admin_reply_to_support(message: types.Message):
         except Exception as e:
             await message.answer(f"Ошибка: {e}")
 
-# --- СОЗДАНИЕ АНКЕТЫ ---
+# --- СОЗДАНИЕ АНКЕТЫ (С ДОБАВЛЕНИЕМ ПОЛА И КЛАССА) ---
 @dp.message(F.text == "📝 Создать/Изменить анкету")
 async def start_create(message: types.Message, state: FSMContext):
     await state.clear()
@@ -211,7 +208,28 @@ async def process_name(message: types.Message, state: FSMContext):
 @dp.message(ProfileForm.age)
 async def process_age(message: types.Message, state: FSMContext):
     await state.update_data(age=message.text)
-    await message.answer(get_text(message.from_user.id, "ask_about"))
+    
+    # ВЫБОР ПОЛА (КНОПКИ)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👦 Парень", callback_data="gender_boy")],
+        [InlineKeyboardButton(text="👧 Девушка", callback_data="gender_girl")]
+    ])
+    await message.answer("Кто ты по полу?", reply_markup=kb)
+    await state.set_state(ProfileForm.gender)
+
+@dp.callback_query(ProfileForm.gender)
+async def process_gender(callback: CallbackQuery, state: FSMContext):
+    gender_text = "Парень 👦" if callback.data == "gender_boy" else "Девушка 👧"
+    await state.update_data(gender=gender_text)
+    
+    # ВЫБОР КЛАССА (ТЕКСТ)
+    await callback.message.edit_text("В каком ты классе? (Напиши цифру, например: 9 или 11)")
+    await state.set_state(ProfileForm.grade)
+
+@dp.message(ProfileForm.grade)
+async def process_grade(message: types.Message, state: FSMContext):
+    await state.update_data(grade=message.text)
+    await message.answer("Расскажи пару слов о себе:")
     await state.set_state(ProfileForm.about)
 
 @dp.message(ProfileForm.about)
@@ -237,9 +255,15 @@ async def process_goal(callback: CallbackQuery, state: FSMContext):
 async def process_photo(message: types.Message, state: FSMContext):
     photo_id = message.photo[-1].file_id
     user_data = await state.get_data()
+    
+    # Сохраняем ВСЕ данные, включая пол и класс
     users_db[message.from_user.id] = {
-        "name": user_data['name'], "age": user_data['age'],
-        "about": user_data['about'], "goal": user_data['goal'],
+        "name": user_data['name'], 
+        "age": user_data['age'],
+        "gender": user_data['gender'],
+        "grade": user_data['grade'],
+        "about": user_data['about'], 
+        "goal": user_data['goal'],
         "photo": photo_id
     }
     swiped_db[message.from_user.id] = [] 
@@ -254,7 +278,13 @@ async def my_profile(message: types.Message):
         return await message.answer("Ты пока не создал анкету!")
     await message.answer_photo(
         photo=data['photo'],
-        caption=f"👤 <b>Твоя анкета:</b>\n\n<b>Имя:</b> {data['name']}\n<b>Возраст:</b> {data['age']}\n<b>Цель:</b> {data['goal']}\n<b>О себе:</b> {data['about']}",
+        caption=f"👤 <b>Твоя анкета:</b>\n\n"
+                f"<b>Имя:</b> {data['name']}\n"
+                f"<b>Возраст:</b> {data['age']}\n"
+                f"<b>Пол:</b> {data['gender']}\n"
+                f"<b>Класс:</b> {data['grade']}\n"
+                f"<b>Цель:</b> {data['goal']}\n"
+                f"<b>О себе:</b> {data['about']}",
         parse_mode="HTML"
     )
 
@@ -280,9 +310,13 @@ async def search_profile(message: types.Message):
         [InlineKeyboardButton(text="❤️ Лайк", callback_data=f"like_{target_id}"),
          InlineKeyboardButton(text="👎 Дизлайк", callback_data=f"dis_{target_id}")]
     ])
+    # Выводим в анкете пол и класс
     await message.answer_photo(
         photo=target['photo'],
-        caption=f"<b>{target['name']}, {target['age']}</b>\n🎯 {target['goal']}\n\n{target['about']}",
+        caption=f"<b>{target['name']}, {target['age']}</b> ({target['gender']})\n"
+                f"🎓 Класс: {target['grade']}\n"
+                f"🎯 Цель: {target['goal']}\n\n"
+                f"{target['about']}",
         reply_markup=kb, parse_mode="HTML"
     )
 
@@ -296,10 +330,8 @@ async def process_like(callback: CallbackQuery):
     likes_db[my_id].append(target_id)
     
     if target_id in likes_db and my_id in likes_db[target_id]:
-        # МЭТЧ!
         await callback.message.edit_caption(caption=get_text(my_id, "match"))
         
-        # Кнопка "Поделиться юзернеймом" для обоих
         kb_share = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🤝 Показать мой @username", callback_data=f"share_{target_id}")]
         ])
@@ -326,7 +358,6 @@ async def process_share_username(callback: CallbackQuery):
     target_id = int(callback.data.split("_")[1])
     my_id = callback.from_user.id
     
-    # Проверяем, есть ли юзернейм
     if not callback.from_user.username:
         await callback.answer("У тебя нет юзернейма в Телеграме! Зайди в настройки профиля, создай его и попробуй снова.", show_alert=True)
         return
@@ -358,7 +389,7 @@ async def process_dislike(callback: CallbackQuery):
     await callback.answer()
 
 async def main():
-    print("Лицейский Мэтч (с обменом контактами) запущен!")
+    print("Лицейский Мэтч (с полом и классами) запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
