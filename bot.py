@@ -2,15 +2,19 @@ import asyncio
 import random
 import os
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
-# Токен берется из настроек сервера (переменные окружения Railway)
+# Настройки
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+PRIMARY_ADMIN_ID = int(os.getenv("ADMIN_ID", "0")) 
+
+SECRET_ADMIN_CODE = "Ризван РЭУ Чечня"
+ADMIN_IDS = {PRIMARY_ADMIN_ID} 
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -19,8 +23,23 @@ users_db = {}
 likes_db = {}      
 swiped_db = {}     
 user_bot_style = {} 
+messages_map = {}
 
-# --- СЛОВАРИ ДЛЯ РАЗНЫХ СТИЛЕЙ БОТА ---
+# Состояния (FSM)
+class ProfileForm(StatesGroup):
+    name = State()
+    age = State()
+    about = State()
+    goal = State()
+    photo = State()
+
+class AdminForm(StatesGroup):
+    waiting_for_code = State()
+
+class SupportForm(StatesGroup):
+    waiting_for_msg = State()
+
+# --- ТЕКСТЫ ---
 TEXTS = {
     "standard": {
         "start": "Йоу, {name}! Я Лицейский Мэтч. Готов найти пару?",
@@ -74,13 +93,6 @@ def get_text(user_id, key, **kwargs):
     text = TEXTS[style].get(key, TEXTS["standard"].get(key, ""))
     return text.format(**kwargs)
 
-class ProfileForm(StatesGroup):
-    name = State()
-    age = State()
-    about = State()
-    goal = State()
-    photo = State()
-
 def get_main_kb():
     builder = ReplyKeyboardBuilder()
     builder.add(KeyboardButton(text="📝 Создать/Изменить анкету"))
@@ -88,9 +100,10 @@ def get_main_kb():
     builder.add(KeyboardButton(text="👤 Мой профиль"))
     builder.add(KeyboardButton(text="🗑 Удалить профиль"))
     builder.add(KeyboardButton(text="⚙️ Сменить стиль бота"))
+    builder.add(KeyboardButton(text="📩 Связь с админом"))
+    builder.add(KeyboardButton(text="👑 Я админ")) # <--- НОВАЯ КНОПКА
     return builder.as_markup(resize_keyboard=True)
 
-# --- ВЫБОР СТИЛЯ БОТА ---
 def get_style_kb():
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="😎 Стандарт", callback_data="set_standard")],
@@ -100,6 +113,21 @@ def get_style_kb():
         [InlineKeyboardButton(text="🇰🇬 Кыргызча", callback_data="set_ky")]
     ])
     return kb
+
+# --- ВХОД В АДМИНКУ ЧЕРЕЗ КНОПКУ ---
+@dp.message(F.text == "👑 Я админ")
+async def start_admin_login(message: types.Message, state: FSMContext):
+    await message.answer("Введи секретный код доступа:", reply_markup=ReplyKeyboardRemove())
+    await state.set_state(AdminForm.waiting_for_code)
+
+@dp.message(AdminForm.waiting_for_code)
+async def process_admin_code(message: types.Message, state: FSMContext):
+    if message.text.strip() == SECRET_ADMIN_CODE:
+        ADMIN_IDS.add(message.from_user.id)
+        await message.answer("✅ Код верный! Теперь тебе будут приходить сообщения из кнопки 'Связь с админом'.", reply_markup=get_main_kb())
+    else:
+        await message.answer("❌ Неверный код. Попробуй еще раз или нажми /start для отмены.", reply_markup=get_main_kb())
+    await state.clear()
 
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
@@ -127,6 +155,41 @@ async def set_style(callback: CallbackQuery):
     )
     await callback.answer()
 
+# --- СВЯЗЬ С АДМИНОМ ---
+@dp.message(F.text == "📩 Связь с админом")
+async def start_support(message: types.Message, state: FSMContext):
+    await message.answer("Напиши свой вопрос или проблему одним сообщением. Я передам его админам. (Чтобы отменить, напиши /start)", reply_markup=ReplyKeyboardRemove())
+    await state.set_state(SupportForm.waiting_for_msg)
+
+@dp.message(SupportForm.waiting_for_msg, F.chat.type == "private")
+async def forward_support_to_admin(message: types.Message, state: FSMContext):
+    success = False
+    for admin_id in ADMIN_IDS:
+        try:
+            sent_msg = await bot.copy_message(chat_id=admin_id, from_chat_id=message.chat.id, message_id=message.message_id)
+            messages_map[sent_msg.message_id] = message.from_user.id
+            success = True
+        except Exception:
+            pass 
+    if success:
+        await message.answer("Твое сообщение отправлено админам! Жди ответа.", reply_markup=get_main_kb())
+    else:
+        await message.answer("Не удалось отправить. Возможно, админы недоступны.", reply_markup=get_main_kb())
+    await state.clear()
+
+@dp.message(F.chat.type == "private", F.reply_to_message)
+async def admin_reply_to_support(message: types.Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return 
+    original_msg_id = message.reply_to_message.message_id
+    if original_msg_id in messages_map:
+        target_user_id = messages_map[original_msg_id]
+        try:
+            await bot.copy_message(chat_id=target_user_id, from_chat_id=message.from_user.id, message_id=message.message_id)
+            await message.answer("Ответ отправлен пользователю! ✅")
+        except Exception as e:
+            await message.answer(f"Ошибка: {e}")
+
 # --- СОЗДАНИЕ АНКЕТЫ ---
 @dp.message(F.text == "📝 Создать/Изменить анкету")
 async def start_create(message: types.Message, state: FSMContext):
@@ -149,7 +212,6 @@ async def process_age(message: types.Message, state: FSMContext):
 @dp.message(ProfileForm.about)
 async def process_about(message: types.Message, state: FSMContext):
     await state.update_data(about=message.text)
-    
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎉 На бал", callback_data="goal_ball")],
         [InlineKeyboardButton(text="❤️ Отношения", callback_data="goal_rel")],
@@ -170,14 +232,12 @@ async def process_goal(callback: CallbackQuery, state: FSMContext):
 async def process_photo(message: types.Message, state: FSMContext):
     photo_id = message.photo[-1].file_id
     user_data = await state.get_data()
-    
     users_db[message.from_user.id] = {
         "name": user_data['name'], "age": user_data['age'],
         "about": user_data['about'], "goal": user_data['goal'],
         "photo": photo_id
     }
     swiped_db[message.from_user.id] = [] 
-    
     await message.answer(get_text(message.from_user.id, "done"), reply_markup=get_main_kb())
     await state.clear()
 
@@ -187,7 +247,6 @@ async def my_profile(message: types.Message):
     data = users_db.get(message.from_user.id)
     if not data:
         return await message.answer("Ты пока не создал анкету!")
-    
     await message.answer_photo(
         photo=data['photo'],
         caption=f"👤 <b>Твоя анкета:</b>\n\n<b>Имя:</b> {data['name']}\n<b>Возраст:</b> {data['age']}\n<b>Цель:</b> {data['goal']}\n<b>О себе:</b> {data['about']}",
@@ -206,22 +265,16 @@ async def search_profile(message: types.Message):
     my_id = message.from_user.id
     if my_id not in users_db:
         return await message.answer("Сначала создай анкету!")
-    
     if my_id not in swiped_db: swiped_db[my_id] = []
-    
     available = [uid for uid in users_db if uid != my_id and uid not in swiped_db[my_id]]
-    
     if not available:
         return await message.answer("Анкеты закончились! Жди других.")
-    
     target_id = random.choice(available)
     target = users_db[target_id]
-    
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="❤️ Лайк", callback_data=f"like_{target_id}"),
          InlineKeyboardButton(text="👎 Дизлайк", callback_data=f"dis_{target_id}")]
     ])
-    
     await message.answer_photo(
         photo=target['photo'],
         caption=f"<b>{target['name']}, {target['age']}</b>\n🎯 {target['goal']}\n\n{target['about']}",
@@ -232,20 +285,16 @@ async def search_profile(message: types.Message):
 async def process_like(callback: CallbackQuery):
     my_id = callback.from_user.id
     target_id = int(callback.data.split("_")[1])
-    
     swiped_db[my_id].append(target_id)
     if my_id not in likes_db: likes_db[my_id] = []
     likes_db[my_id].append(target_id)
-    
     if target_id in likes_db and my_id in likes_db[target_id]:
         await callback.message.edit_caption(caption=get_text(my_id, "match"))
         try:
             await bot.send_message(target_id, get_text(target_id, "match"))
-        except:
-            pass
+        except: pass
     else:
         await callback.message.edit_caption(caption="Ты лайкнул анкету! 😉")
-    
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("dis_"))
@@ -257,7 +306,7 @@ async def process_dislike(callback: CallbackQuery):
     await callback.answer()
 
 async def main():
-    print("Бот запущен!")
+    print("Лицейский Мэтч (с кнопкой админа) запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
