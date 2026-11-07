@@ -15,9 +15,8 @@ PRIMARY_ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 SECRET_ADMIN_CODE = "Ризван РЭУ Чечня"
 ADMIN_IDS = {PRIMARY_ADMIN_ID} 
 
-# Базы данных
 BANNED_WORDS = ["хуй", "пизд", "бля", "еба", "ебал", "секс", "порно", "гандон", "долбоеб"]
-banned_users = set() # Тут храним ID забаненных фейков
+banned_users = set() 
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -44,6 +43,7 @@ class AdminForm(StatesGroup):
 class SupportForm(StatesGroup):
     waiting_for_msg = State()
 
+# --- ТЕКСТЫ СТИЛЕЙ ---
 TEXTS = {
     "standard": {
         "start": "Йоу, {name}! Я АлкоRedБот. Готов найти пару?",
@@ -77,13 +77,13 @@ TEXTS = {
         "done": "Profile sent for moderation! 🕵️‍♂️",
         "match": "🎉 IT'S A MATCH! You liked each other!"
     },
-    "ky": {
-        "start": "Салам, {name}! Мен АлкоRedБотмун. Жуп табабызбы?",
-        "ask_name": "Атың ким?",
-        "ask_age": "Жашың нечеде?",
-        "ask_photo": "Анкетаңа сүрөтүңдү жөнөт:",
-        "done": "Анкета текшерүүгө жөнөтүлдү! 🕵️‍♂️",
-        "match": "🎉 МЭТЧ! Тил табыштыңар!"
+    "chechnya": {
+        "start": "Ассаламу алейкум, {name}! 🔥 Я АлкоRedБот. Братан, ищем пару на бал или просто красивую девушку? Вах, погнали!",
+        "ask_name": "Братан, как тебя зовут? (Напиши имя)",
+        "ask_age": "Сколько лет тебе, брат?",
+        "ask_photo": "Кинь фотку, брат. Где ты на стиле, как настоящий джигит 🦅",
+        "done": "Анкета готова, брат! Вах, красавчик! Отправил на проверку админам 🦅",
+        "match": "🔥 МЭТЧ! Братан, это судьба! Вах, поздравляю, она твоя! 😎"
     }
 }
 
@@ -94,7 +94,6 @@ def get_text(user_id, key, **kwargs):
 
 # --- КЛАВИАТУРЫ ---
 def get_start_kb():
-    """Меню на 3 кнопки для самого начала"""
     builder = ReplyKeyboardBuilder()
     builder.add(KeyboardButton(text="📩 Связь с админом"))
     builder.add(KeyboardButton(text="👑 Я админ"))
@@ -102,7 +101,6 @@ def get_start_kb():
     return builder.as_markup(resize_keyboard=True)
 
 def get_main_kb():
-    """Полное меню для работы с анкетой"""
     builder = ReplyKeyboardBuilder()
     builder.add(KeyboardButton(text="📝 Создать/Изменить анкету"))
     builder.add(KeyboardButton(text="🔍 Искать пару"))
@@ -111,13 +109,19 @@ def get_main_kb():
     builder.add(KeyboardButton(text="⚙️ Сменить стиль бота"))
     return builder.as_markup(resize_keyboard=True)
 
+def get_search_kb():
+    builder = ReplyKeyboardBuilder()
+    builder.add(KeyboardButton(text="📩 Связь с админом"))
+    builder.add(KeyboardButton(text="⬅️ В главное меню"))
+    return builder.as_markup(resize_keyboard=True)
+
 def get_style_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="😎 Стандарт", callback_data="set_standard")],
         [InlineKeyboardButton(text="😘 Флирт", callback_data="set_flirt")],
         [InlineKeyboardButton(text="🖤 Альтушка", callback_data="set_alt")],
         [InlineKeyboardButton(text="🇬🇧 English", callback_data="set_en")],
-        [InlineKeyboardButton(text="🇰🇬 Кыргызча", callback_data="set_ky")]
+        [InlineKeyboardButton(text="🔥 Резванская Чечня", callback_data="set_chechnya")] # <-- Заменили
     ])
 
 # --- СТАРТ И СТИЛИ ---
@@ -136,13 +140,17 @@ async def cmd_start(message: types.Message, state: FSMContext):
 async def go_to_main_menu(message: types.Message):
     await message.answer("Твой личный бармен готов! Выбирай действие:", reply_markup=get_main_kb())
 
+@dp.message(F.text == "⬅️ В главное меню")
+async def back_to_main(message: types.Message):
+    await message.answer("Возвращаемся. Чем займемся?", reply_markup=get_start_kb())
+
 @dp.message(F.text == "⚙️ Сменить стиль бота")
 async def change_style_cmd(message: types.Message):
     await message.answer("Выбери новый стиль общения:", reply_markup=get_style_kb())
 
 @dp.callback_query(F.data.startswith("set_"))
 async def set_style(callback: CallbackQuery):
-    style = callback.data.split("_")[1]
+    style = callback.data.split("_")[1] # для "set_chechnya" выдаст "chechnya"
     user_bot_style[callback.from_user.id] = style
     await callback.message.delete()
     await callback.message.answer(
@@ -179,7 +187,7 @@ async def forward_support_to_admin(message: types.Message, state: FSMContext):
             sent_msg = await bot.copy_message(chat_id=admin_id, from_chat_id=message.chat.id, message_id=message.message_id)
             messages_map[sent_msg.message_id] = message.from_user.id
         except: pass 
-    await message.answer("Твое сообщение отправлено админам!", reply_markup=get_start_kb())
+    await message.answer("Твое сообщение отправлено админам! Возвращаемся в меню.", reply_markup=get_start_kb())
     await state.clear()
 
 @dp.message(F.chat.type == "private", F.reply_to_message)
@@ -334,18 +342,17 @@ async def delete_profile(message: types.Message):
         del pending_db[message.from_user.id]
         await message.answer("Твоя анкета (на модерации) удалена.", reply_markup=get_main_kb())
 
-# --- ЛЕНТА (ИСПРАВЛЕНА АВТОЗАГРУЗКА) ---
+# --- ЛЕНТА ---
 async def show_next_profile(chat_id, user_id):
     if user_id not in users_db:
         return await bot.send_message(chat_id, "Сначала создай анкету (и дождись одобрения)!")
     
     if user_id not in swiped_db: swiped_db[user_id] = []
     
-    # Исключаем себя и тех, кого уже свайпнули
     available = [uid for uid in users_db if uid != user_id and uid not in swiped_db[user_id]]
     
     if not available:
-        return await bot.send_message(chat_id, "Анкеты закончились! Жди новых лицеистов. Ты просмотрел всех.")
+        return await bot.send_message(chat_id, "Анкеты закончились! Жди новых лицеистов.", reply_markup=get_main_kb())
         
     target_id = random.choice(available)
     target = users_db[target_id]
@@ -365,6 +372,7 @@ async def show_next_profile(chat_id, user_id):
 
 @dp.message(F.text == "🔍 Искать пару")
 async def search_profile(message: types.Message):
+    await message.answer("Режим поиска активирован. Нажми «Лайк» или «Дизлайк» под анкетой. Чтобы выйти, нажми кнопку ниже 👇", reply_markup=get_search_kb())
     await show_next_profile(message.chat.id, message.from_user.id)
 
 @dp.callback_query(F.data.startswith("like_"))
@@ -388,7 +396,6 @@ async def process_like(callback: CallbackQuery):
         await callback.message.edit_caption(caption="Ты лайкнул анкету! 😉")
     
     await callback.answer()
-    # АВТОМАТИЧЕСКИЙ ПЕРЕХОД К СЛЕДУЮЩЕЙ АНКЕТЕ
     await asyncio.sleep(0.5)
     await show_next_profile(callback.message.chat.id, my_id)
 
@@ -403,7 +410,6 @@ async def process_dislike(callback: CallbackQuery):
     await callback.message.edit_caption(caption="Дизлайк. Идем дальше! 👎")
     await callback.answer()
     
-    # АВТОМАТИЧЕСКИЙ ПЕРЕХОД К СЛЕДУЮЩЕЙ АНКЕТЕ
     await asyncio.sleep(0.5)
     await show_next_profile(callback.message.chat.id, my_id)
 
@@ -424,7 +430,6 @@ async def process_share_username(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("report_"))
 async def process_report(callback: CallbackQuery):
     target_id = int(callback.data.split("_")[1])
-    reporter_id = callback.from_user.id
     
     kb_ban = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🚫 Забанить фейк", callback_data=f"ban_{target_id}")]
@@ -456,7 +461,7 @@ async def process_ban(callback: CallbackQuery):
     await callback.answer()
 
 async def main():
-    print("АлкоRedБот (Финальная версия с жалобами) запущен!")
+    print("АлкоRedБот (с Резванской Чечней) запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
