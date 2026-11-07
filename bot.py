@@ -13,6 +13,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PRIMARY_ADMIN_ID = int(os.getenv("ADMIN_ID", "0")) 
 SECRET_ADMIN_CODE = "Ризван РЭУ Чечня"
+BAN_SECRET_CODE = "Наталья Альбертовна" 
 ADMIN_IDS = {PRIMARY_ADMIN_ID} 
 
 BANNED_WORDS = ["хуй", "пизд", "бля", "еба", "ебал", "секс", "порно", "гандон", "долбоеб"]
@@ -42,6 +43,12 @@ class AdminForm(StatesGroup):
 
 class SupportForm(StatesGroup):
     waiting_for_msg = State()
+
+class BanForm(StatesGroup):
+    waiting_for_reason = State()
+
+class TikTokForm(StatesGroup):
+    waiting_for_link = State()
 
 # --- ТЕКСТЫ СТИЛЕЙ ---
 TEXTS = {
@@ -87,6 +94,35 @@ TEXTS = {
     }
 }
 
+AURAS = [
+    "🌟 Аура: 99% Джигит. Вах, красавчик! 🦅",
+    "🖤 Аура: 100% Альтушка. Дед инсайд detected 🕸",
+    "😎 Аура: 85% Мачо. База.",
+    "🤡 Аура: 70% Кринж. Но мы тебя все равно любим.",
+    "🔥 Аура: 120% Огонь. Я уже красный!",
+    "💀 Аура: 66% Сатана. С тобой лучше не шутить.",
+    "🥀 Аура: 90% Романтик. Ждешь вальс на балу?",
+    "💸 Аура: 100% Спонсор. Угостишь всех шаурмой?",
+    "👽 Аура: 42% Инопланетянин. Ты точно из нашего лицея?",
+    "👑 Аура: 100% Король/Королева бала. Слушаюсь и повинуюсь."
+]
+
+TIKTOK_ALT = [
+    "🖤 Ну такое... Слишком попсово для меня. Меньше трендов, больше депрессии.",
+    "🕸 Че за база? Я такое видела в 2019. Удали, пока не поздно.",
+    "💀 Кринж. Но мне почему-то нравится. Странно.",
+    "🥀 Слишком ярко. Мне нужно что-то потемнее и погрустнее.",
+    "🦇 Норм, но тебе не хватает черной одежды и грустной музыки."
+]
+
+TIKTOK_JEW = [
+    "💸 А сколько ты за этот ТикТок заплатил? Зря. Лучше бы в бизнес вложил.",
+    "🤨 И это все? Мой дедушка в Одессе снимал лучше на кассету в 90-х.",
+    "💼 Ладно, допустим. Но коммерческой жилки я тут не вижу. В минус работаешь.",
+    "🥯 Норм, но за такую музыку нужно доплачивать. Ты вообще в курсе цен на рынке?",
+    "✡️ Слушай, ну это несерьезно. Давай по-деловому: где гарантии, где контракт?"
+]
+
 def get_text(user_id, key, **kwargs):
     style = user_bot_style.get(user_id, "standard")
     text = TEXTS[style].get(key, TEXTS["standard"].get(key, ""))
@@ -105,6 +141,8 @@ def get_main_kb():
     builder.add(KeyboardButton(text="📝 Создать/Изменить анкету"))
     builder.add(KeyboardButton(text="🔍 Искать пару"))
     builder.add(KeyboardButton(text="👤 Мой профиль"))
+    builder.add(KeyboardButton(text="✨ Моя аура")) 
+    builder.add(KeyboardButton(text="📱 Оценить ТикТок")) 
     builder.add(KeyboardButton(text="🗑 Удалить профиль"))
     builder.add(KeyboardButton(text="⚙️ Сменить стиль бота"))
     return builder.as_markup(resize_keyboard=True)
@@ -121,7 +159,7 @@ def get_style_kb():
         [InlineKeyboardButton(text="😘 Флирт", callback_data="set_flirt")],
         [InlineKeyboardButton(text="🖤 Альтушка", callback_data="set_alt")],
         [InlineKeyboardButton(text="🇬🇧 English", callback_data="set_en")],
-        [InlineKeyboardButton(text="🔥 Резванская Чечня", callback_data="set_chechnya")] # <-- Заменили
+        [InlineKeyboardButton(text="🔥 Резванская Чечня", callback_data="set_chechnya")]
     ])
 
 # --- СТАРТ И СТИЛИ ---
@@ -137,12 +175,14 @@ async def cmd_start(message: types.Message, state: FSMContext):
         )
 
 @dp.message(F.text == "🚀 В главное меню")
-async def go_to_main_menu(message: types.Message):
+async def go_to_main_menu(message: types.Message, state: FSMContext):
+    await state.clear() 
     await message.answer("Твой личный бармен готов! Выбирай действие:", reply_markup=get_main_kb())
 
 @dp.message(F.text == "⬅️ В главное меню")
-async def back_to_main(message: types.Message):
-    await message.answer("Возвращаемся. Чем займемся?", reply_markup=get_start_kb())
+async def back_to_main(message: types.Message, state: FSMContext):
+    await state.clear() 
+    await message.answer("Возвращаемся в меню. Чем займемся?", reply_markup=get_main_kb())
 
 @dp.message(F.text == "⚙️ Сменить стиль бота")
 async def change_style_cmd(message: types.Message):
@@ -150,13 +190,66 @@ async def change_style_cmd(message: types.Message):
 
 @dp.callback_query(F.data.startswith("set_"))
 async def set_style(callback: CallbackQuery):
-    style = callback.data.split("_")[1] # для "set_chechnya" выдаст "chechnya"
+    style = callback.data.split("_")[1]
     user_bot_style[callback.from_user.id] = style
     await callback.message.delete()
     await callback.message.answer(
         get_text(callback.from_user.id, "start", name=callback.from_user.first_name) + "\n\nЧем займемся?",
         reply_markup=get_start_kb()
     )
+    await callback.answer()
+
+# --- АУРА И ТИКТОК ---
+@dp.message(F.text == "✨ Моя аура")
+async def show_my_aura(message: types.Message):
+    if message.from_user.id not in users_db:
+        return await message.answer("Сначала создай анкету, чтобы я увидел твою ауру!")
+    
+    my_name = users_db[message.from_user.id]['name']
+    # Генерируем ауру на основе имени, чтобы она не менялась
+    aura_index = sum(ord(c) for c in my_name) % len(AURAS)
+    await message.answer(f"🔮 Твоя аура, {my_name}:\n\n{AURAS[aura_index]}")
+
+# Обработка кнопки проверки ЧУЖОЙ ауры
+@dp.callback_query(F.data.startswith("aura_"))
+async def process_check_aura(callback: CallbackQuery):
+    target_id = int(callback.data.split("_")[1])
+    if target_id in users_db:
+        target_name = users_db[target_id]['name']
+        aura_index = sum(ord(c) for c in target_name) % len(AURAS)
+        # Используем show_alert=True, чтобы всплыло окошко поверх экрана
+        await callback.answer(f"🔮 Аура {target_name}:\n\n{AURAS[aura_index]}", show_alert=True)
+    else:
+        await callback.answer("Анкета недоступна.", show_alert=True)
+
+@dp.message(F.text == "📱 Оценить ТикТок")
+async def start_tiktok(message: types.Message, state: FSMContext):
+    await message.answer("Скинь ссылку на свой ТикТок, и я его оценю! 👇", reply_markup=ReplyKeyboardRemove())
+    await state.set_state(TikTokForm.waiting_for_link)
+
+@dp.message(TikTokForm.waiting_for_link)
+async def process_tiktok_link(message: types.Message, state: FSMContext):
+    link = message.text
+    if "tiktok.com" not in link.lower():
+        return await message.answer("Это не похоже на ссылку с ТикТока. Попробуй еще раз или нажми /start для выхода.")
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🖤 Оценит Альтушка", callback_data="tt_alt")],
+        [InlineKeyboardButton(text="💼 Оценит Еврей", callback_data="tt_jew")]
+    ])
+    await message.answer("Кто должен прокомментировать твой ТикТок?", reply_markup=kb)
+    await state.clear()
+
+@dp.callback_query(F.data.startswith("tt_"))
+async def review_tiktok(callback: CallbackQuery):
+    style = callback.data.split("_")[1]
+    if style == "alt":
+        comment = random.choice(TIKTOK_ALT)
+    else:
+        comment = random.choice(TIKTOK_JEW)
+        
+    await callback.message.edit_text(f"🎬 <b>Вердикт:</b>\n\n{comment}", parse_mode="HTML")
+    await callback.message.answer("Возвращаемся в меню:", reply_markup=get_main_kb())
     await callback.answer()
 
 # --- АДМИНКА ---
@@ -200,6 +293,64 @@ async def admin_reply_to_support(message: types.Message):
             await bot.copy_message(chat_id=target_user_id, from_chat_id=message.from_user.id, message_id=message.message_id)
             await message.answer("Ответ отправлен! ✅")
         except: pass
+
+# --- СИСТЕМА ЖАЛОБ И БАНОВ ---
+@dp.callback_query(F.data.startswith("report_"))
+async def process_report(callback: CallbackQuery):
+    target_id = int(callback.data.split("_")[1])
+    
+    kb_ban = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚫 Забанить", callback_data=f"askban_{target_id}")]
+    ])
+    
+    report_text = f"🚨 <b>ЖАЛОБА НА АНКЕТУ!</b>\n\nID нарушителя: <code>{target_id}</code>\n"
+    if target_id in users_db:
+        report_text += f"Имя: {users_db[target_id]['name']}\n\nНажми «Забанить», чтобы вынести приговор."
+    
+    for admin_id in ADMIN_IDS:
+        try: await bot.send_message(admin_id, report_text, reply_markup=kb_ban, parse_mode="HTML")
+        except: pass
+    
+    await callback.answer("Жалоба отправлена админам! Спасибо.", show_alert=True)
+
+@dp.callback_query(F.data.startswith("askban_"))
+async def ask_ban_reason(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        return await callback.answer("Ты не админ!", show_alert=True)
+        
+    target_id = int(callback.data.split("_")[1])
+    await state.update_data(target_ban_id=target_id)
+    
+    await callback.message.edit_text(
+        "🛑 <b>Вынеси приговор!</b>\n\n"
+        "Напиши причину бана для этого пользователя.\n"
+        "Или введи секретный код <b>«Наталья Альбертовна»</b>, чтобы забанить без объяснений."
+    )
+    await state.set_state(BanForm.waiting_for_reason)
+    await callback.answer()
+
+@dp.message(BanForm.waiting_for_reason)
+async def process_ban_reason(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    target_id = data.get("target_ban_id")
+    reason = message.text.strip()
+    
+    if target_id in users_db:
+        del users_db[target_id]
+    banned_users.add(target_id)
+    
+    if reason == BAN_SECRET_CODE:
+        admin_msg = "✅ Пользователь забанен по секретному коду (без объяснений)."
+        user_msg = "❌ Твой профиль был забанен. Причина: Нарушение правил."
+    else:
+        admin_msg = f"✅ Пользователь забанен. Причина: {reason}"
+        user_msg = f"❌ Твой профиль был забанен админами.\nПричина: {reason}"
+        
+    await message.answer(admin_msg, reply_markup=get_main_kb())
+    try:
+        await bot.send_message(target_id, user_msg)
+    except: pass
+    await state.clear()
 
 # --- СОЗДАНИЕ АНКЕТЫ ---
 @dp.message(F.text == "📝 Создать/Изменить анкету")
@@ -357,9 +508,12 @@ async def show_next_profile(chat_id, user_id):
     target_id = random.choice(available)
     target = users_db[target_id]
     
+    # Добавили кнопку Ауры для чужих анкет
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="❤️ Лайк", callback_data=f"like_{target_id}"),
          InlineKeyboardButton(text="👎 Дизлайк", callback_data=f"dis_{target_id}")],
+        [InlineKeyboardButton(text="⏭ Скип", callback_data=f"skip_{target_id}"),
+         InlineKeyboardButton(text="🔮 Аура", callback_data=f"aura_{target_id}")], # <--- Новая кнопка
         [InlineKeyboardButton(text="🚩 Пожаловаться", callback_data=f"report_{target_id}")]
     ])
     
@@ -372,7 +526,7 @@ async def show_next_profile(chat_id, user_id):
 
 @dp.message(F.text == "🔍 Искать пару")
 async def search_profile(message: types.Message):
-    await message.answer("Режим поиска активирован. Нажми «Лайк» или «Дизлайк» под анкетой. Чтобы выйти, нажми кнопку ниже 👇", reply_markup=get_search_kb())
+    await message.answer("Режим поиска активирован. Нажми «Лайк», «Дизлайк», «Скип» или «Аура» под анкетой. Чтобы выйти, нажми кнопку ниже 👇", reply_markup=get_search_kb())
     await show_next_profile(message.chat.id, message.from_user.id)
 
 @dp.callback_query(F.data.startswith("like_"))
@@ -413,6 +567,20 @@ async def process_dislike(callback: CallbackQuery):
     await asyncio.sleep(0.5)
     await show_next_profile(callback.message.chat.id, my_id)
 
+@dp.callback_query(F.data.startswith("skip_"))
+async def process_skip(callback: CallbackQuery):
+    my_id = callback.from_user.id
+    target_id = int(callback.data.split("_")[1])
+    
+    if my_id not in swiped_db: swiped_db[my_id] = []
+    swiped_db[my_id].append(target_id)
+    
+    await callback.message.edit_caption(caption="⏭ Анкета пропущена.")
+    await callback.answer()
+    
+    await asyncio.sleep(0.5)
+    await show_next_profile(callback.message.chat.id, my_id)
+
 @dp.callback_query(F.data.startswith("share_"))
 async def process_share_username(callback: CallbackQuery):
     target_id = int(callback.data.split("_")[1])
@@ -426,42 +594,8 @@ async def process_share_username(callback: CallbackQuery):
     except: pass
     await callback.answer()
 
-# --- СИСТЕМА ЖАЛОБ И БАНОВ ---
-@dp.callback_query(F.data.startswith("report_"))
-async def process_report(callback: CallbackQuery):
-    target_id = int(callback.data.split("_")[1])
-    
-    kb_ban = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🚫 Забанить фейк", callback_data=f"ban_{target_id}")]
-    ])
-    
-    report_text = f"🚨 <b>ЖАЛОБА НА АНКЕТУ!</b>\n\nКто-то нажал на кнопку жалобы. Проверь этого пользователя.\nID нарушителя: <code>{target_id}</code>\n"
-    if target_id in users_db:
-        report_text += f"Имя: {users_db[target_id]['name']}"
-    
-    for admin_id in ADMIN_IDS:
-        try: await bot.send_message(admin_id, report_text, reply_markup=kb_ban, parse_mode="HTML")
-        except: pass
-    
-    await callback.answer("Жалоба отправлена админам! Спасибо, мы разберемся.", show_alert=True)
-
-@dp.callback_query(F.data.startswith("ban_"))
-async def process_ban(callback: CallbackQuery):
-    target_id = int(callback.data.split("_")[1])
-    
-    if target_id in users_db:
-        del users_db[target_id]
-    
-    banned_users.add(target_id)
-    
-    await callback.message.edit_text("✅ Профиль забанен и удален из поиска.")
-    try:
-        await bot.send_message(target_id, "❌ Твой профиль был забанен админами из-за жалоб (фейк или нарушение правил).")
-    except: pass
-    await callback.answer()
-
 async def main():
-    print("АлкоRedБот (с Резванской Чечней) запущен!")
+    print("АлкоRedБот (с Аурой для всех) запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
