@@ -9,7 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
-# Настройки
+# --- НАСТРОЙКИ ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PRIMARY_ADMIN_ID = int(os.getenv("ADMIN_ID", "0")) 
 
@@ -19,13 +19,14 @@ ADMIN_IDS = {PRIMARY_ADMIN_ID}
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
+# Хранилища данных
 users_db = {}      
 likes_db = {}      
 swiped_db = {}     
 user_bot_style = {} 
-messages_map = {}
+messages_map = {} # Для связи сообщений (анонимки)
 
-# Состояния (FSM) - Добавили gender и grade
+# Состояния (FSM)
 class ProfileForm(StatesGroup):
     name = State()
     age = State()
@@ -41,10 +42,10 @@ class AdminForm(StatesGroup):
 class SupportForm(StatesGroup):
     waiting_for_msg = State()
 
-# --- ТЕКСТЫ ---
+# --- ТЕКСТЫ СТИЛЕЙ ---
 TEXTS = {
     "standard": {
-        "start": "Йоу, {name}! Я Лицейский Мэтч. Готов найти пару?",
+        "start": "Йоу, {name}! Я АлкоRedБот. Готов найти пару?",
         "ask_name": "Погнали! Как тебя зовут?",
         "ask_age": "Сколько тебе лет?",
         "ask_photo": "Кинь свою фотку для анкеты (отправь как фото):",
@@ -60,7 +61,7 @@ TEXTS = {
         "match": "🔥 МЭТЧ! Пупсик, вы созданы друг для друга!"
     },
     "alt": {
-        "start": "Йоу, {name} 🖤 Я Лицейский Мэтч. Тут не кринжуют, а ищут свою родственную душу.",
+        "start": "Йоу, {name} 🖤 Я АлкоRedБот. Тут не кринжуют, а ищут свою родственную душу.",
         "ask_name": "Как тебя величать, дед инсайд?",
         "ask_age": "Сколько тебе лет?",
         "ask_photo": "Закинь фотку, где ты максимально на стиле. Жду.",
@@ -68,7 +69,7 @@ TEXTS = {
         "match": "💀 МЭТЧ! Вы нашли друг друга в этом жестоком мире."
     },
     "en": {
-        "start": "Yo {name}! I'm the Lyceum Match bot. Ready to find a date?",
+        "start": "Yo {name}! I'm the AlkoRedBot. Ready to find a date?",
         "ask_name": "Let's go! What's your name?",
         "ask_age": "How old are you?",
         "ask_photo": "Drop your best pic for the profile:",
@@ -76,7 +77,7 @@ TEXTS = {
         "match": "🎉 IT'S A MATCH! You liked each other!"
     },
     "ky": {
-        "start": "Салам, {name}! Мен Лицей Мэтч ботумун. Жуп табабызбы?",
+        "start": "Салам, {name}! Мен АлкоRedБотмун. Жуп табабызбы?",
         "ask_name": "Атың ким?",
         "ask_age": "Жашың нечеде?",
         "ask_photo": "Анкетаңа сүрөтүңдү жөнөт:",
@@ -90,6 +91,7 @@ def get_text(user_id, key, **kwargs):
     text = TEXTS[style].get(key, TEXTS["standard"].get(key, ""))
     return text.format(**kwargs)
 
+# --- КЛАВИАТУРЫ ---
 def get_main_kb():
     builder = ReplyKeyboardBuilder()
     builder.add(KeyboardButton(text="📝 Создать/Изменить анкету"))
@@ -102,15 +104,15 @@ def get_main_kb():
     return builder.as_markup(resize_keyboard=True)
 
 def get_style_kb():
-    kb = InlineKeyboardMarkup(inline_keyboard=[
+    return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="😎 Стандарт", callback_data="set_standard")],
         [InlineKeyboardButton(text="😘 Флирт", callback_data="set_flirt")],
         [InlineKeyboardButton(text="🖤 Альтушка", callback_data="set_alt")],
         [InlineKeyboardButton(text="🇬🇧 English", callback_data="set_en")],
         [InlineKeyboardButton(text="🇰🇬 Кыргызча", callback_data="set_ky")]
     ])
-    return kb
 
+# --- СТАРТ И СТИЛИ ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -121,21 +123,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
             get_text(message.from_user.id, "start", name=message.from_user.first_name),
             reply_markup=get_main_kb()
         )
-
-# --- ВХОД В АДМИНКУ ---
-@dp.message(F.text == "👑 Я админ")
-async def start_admin_login(message: types.Message, state: FSMContext):
-    await message.answer("Введи секретный код доступа:", reply_markup=ReplyKeyboardRemove())
-    await state.set_state(AdminForm.waiting_for_code)
-
-@dp.message(AdminForm.waiting_for_code)
-async def process_admin_code(message: types.Message, state: FSMContext):
-    if message.text.strip() == SECRET_ADMIN_CODE:
-        ADMIN_IDS.add(message.from_user.id)
-        await message.answer("✅ Код верный! Теперь тебе будут приходить сообщения из кнопки 'Связь с админом'.", reply_markup=get_main_kb())
-    else:
-        await message.answer("❌ Неверный код. Попробуй еще раз или нажми /start.", reply_markup=get_main_kb())
-    await state.clear()
 
 @dp.message(F.text == "⚙️ Сменить стиль бота")
 async def change_style_cmd(message: types.Message):
@@ -152,7 +139,22 @@ async def set_style(callback: CallbackQuery):
     )
     await callback.answer()
 
-# --- СВЯЗЬ С АДМИНОМ ---
+# --- АДМИНКА ---
+@dp.message(F.text == "👑 Я админ")
+async def start_admin_login(message: types.Message, state: FSMContext):
+    await message.answer("Введи секретный код доступа:", reply_markup=ReplyKeyboardRemove())
+    await state.set_state(AdminForm.waiting_for_code)
+
+@dp.message(AdminForm.waiting_for_code)
+async def process_admin_code(message: types.Message, state: FSMContext):
+    if message.text.strip() == SECRET_ADMIN_CODE:
+        ADMIN_IDS.add(message.from_user.id)
+        await message.answer("✅ Код верный! Теперь тебе будут приходить анонимные сообщения.", reply_markup=get_main_kb())
+    else:
+        await message.answer("❌ Неверный код. Попробуй еще раз или нажми /start.", reply_markup=get_main_kb())
+    await state.clear()
+
+# --- АНОНИМНАЯ СВЯЗЬ ---
 @dp.message(F.text == "📩 Связь с админом")
 async def start_support(message: types.Message, state: FSMContext):
     await message.answer(
@@ -168,31 +170,48 @@ async def forward_support_to_admin(message: types.Message, state: FSMContext):
     success = False
     for admin_id in ADMIN_IDS:
         try:
-            sent_msg = await bot.copy_message(chat_id=admin_id, from_chat_id=message.chat.id, message_id=message.message_id)
+            # Пересылаем сообщение админу
+            sent_msg = await bot.copy_message(
+                chat_id=admin_id, 
+                from_chat_id=message.chat.id, 
+                message_id=message.message_id
+            )
+            # Запоминаем: ID сообщения у админа -> ID лицеиста
             messages_map[sent_msg.message_id] = message.from_user.id
             success = True
         except Exception:
             pass 
+            
     if success:
         await message.answer("Твое сообщение отправлено админам! Жди ответа.", reply_markup=get_main_kb())
     else:
         await message.answer("Не удалось отправить. Возможно, админы недоступны.", reply_markup=get_main_kb())
     await state.clear()
 
+# ОТВЕТ АДМИНА (Реализация в реальном времени)
 @dp.message(F.chat.type == "private", F.reply_to_message)
 async def admin_reply_to_support(message: types.Message):
+    # Проверяем, что пишет именно админ
     if message.from_user.id not in ADMIN_IDS:
         return 
+        
     original_msg_id = message.reply_to_message.message_id
+    
+    # Если этот ID есть в нашей базе (значит, это ответ на анонимку)
     if original_msg_id in messages_map:
         target_user_id = messages_map[original_msg_id]
         try:
-            await bot.copy_message(chat_id=target_user_id, from_chat_id=message.from_user.id, message_id=message.message_id)
-            await message.answer("Ответ отправлен пользователю! ✅")
+            # Копируем ответ админа и шлем лицеисту
+            await bot.copy_message(
+                chat_id=target_user_id, 
+                from_chat_id=message.from_user.id, 
+                message_id=message.message_id
+            )
+            await message.answer("Ответ отправлен лицеисту! ✅")
         except Exception as e:
-            await message.answer(f"Ошибка: {e}")
+            await message.answer(f"Ошибка: возможно, пользователь заблокировал бота.\n{e}")
 
-# --- СОЗДАНИЕ АНКЕТЫ (С ДОБАВЛЕНИЕМ ПОЛА И КЛАССА) ---
+# --- СОЗДАНИЕ АНКЕТЫ ---
 @dp.message(F.text == "📝 Создать/Изменить анкету")
 async def start_create(message: types.Message, state: FSMContext):
     await state.clear()
@@ -208,8 +227,6 @@ async def process_name(message: types.Message, state: FSMContext):
 @dp.message(ProfileForm.age)
 async def process_age(message: types.Message, state: FSMContext):
     await state.update_data(age=message.text)
-    
-    # ВЫБОР ПОЛА (КНОПКИ)
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👦 Парень", callback_data="gender_boy")],
         [InlineKeyboardButton(text="👧 Девушка", callback_data="gender_girl")]
@@ -221,8 +238,6 @@ async def process_age(message: types.Message, state: FSMContext):
 async def process_gender(callback: CallbackQuery, state: FSMContext):
     gender_text = "Парень 👦" if callback.data == "gender_boy" else "Девушка 👧"
     await state.update_data(gender=gender_text)
-    
-    # ВЫБОР КЛАССА (ТЕКСТ)
     await callback.message.edit_text("В каком ты классе? (Напиши цифру, например: 9 или 11)")
     await state.set_state(ProfileForm.grade)
 
@@ -256,7 +271,6 @@ async def process_photo(message: types.Message, state: FSMContext):
     photo_id = message.photo[-1].file_id
     user_data = await state.get_data()
     
-    # Сохраняем ВСЕ данные, включая пол и класс
     users_db[message.from_user.id] = {
         "name": user_data['name'], 
         "age": user_data['age'],
@@ -310,7 +324,6 @@ async def search_profile(message: types.Message):
         [InlineKeyboardButton(text="❤️ Лайк", callback_data=f"like_{target_id}"),
          InlineKeyboardButton(text="👎 Дизлайк", callback_data=f"dis_{target_id}")]
     ])
-    # Выводим в анкете пол и класс
     await message.answer_photo(
         photo=target['photo'],
         caption=f"<b>{target['name']}, {target['age']}</b> ({target['gender']})\n"
@@ -389,7 +402,7 @@ async def process_dislike(callback: CallbackQuery):
     await callback.answer()
 
 async def main():
-    print("Лицейский Мэтч (с полом и классами) запущен!")
+    print("АлкоRedБот запущен и готов к работе!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
