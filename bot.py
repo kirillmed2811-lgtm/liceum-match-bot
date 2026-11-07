@@ -57,7 +57,7 @@ TEXTS = {
         "ask_about": "Расскажи, чем ты так цепляешь людей? 😏",
         "ask_photo": "А теперь скинь свою самую сочную аватарку 💋",
         "done": "Ммм, выглядишь потрясно! Анкета готова 🥵",
-        "match": "🔥 МЭТЧ! Пупсик, вы созданы друг для друга! Беги писать 😉"
+        "match": "🔥 МЭТЧ! Пупсик, вы созданы друг для друга!"
     },
     "alt": {
         "start": "Йоу, {name} 🖤 Я Лицейский Мэтч. Тут не кринжуют, а ищут свою родственную душу.",
@@ -66,7 +66,7 @@ TEXTS = {
         "ask_about": "Напиши что-нибудь эдакое. Че ты за вайб?",
         "ask_photo": "Закинь фотку, где ты максимально на стиле. Жду.",
         "done": "Окей, база. Твоя анкета в деле 🕸",
-        "match": "💀 МЭТЧ! Вы нашли друг друга в этом жестоком мире. Пиши ему."
+        "match": "💀 МЭТЧ! Вы нашли друг друга в этом жестоком мире."
     },
     "en": {
         "start": "Yo {name}! I'm the Lyceum Match bot. Ready to find a date?",
@@ -75,7 +75,7 @@ TEXTS = {
         "ask_about": "Tell me a bit about yourself:",
         "ask_photo": "Drop your best pic for the profile:",
         "done": "Profile is ready! 🎉",
-        "match": "🎉 IT'S A MATCH! You liked each other! Slide into their DMs."
+        "match": "🎉 IT'S A MATCH! You liked each other!"
     },
     "ky": {
         "start": "Салам, {name}! Мен Лицей Мэтч ботумун. Жуп табабызбы?",
@@ -84,7 +84,7 @@ TEXTS = {
         "ask_about": "Өзүң жөнүндө эки ооз сүйлөп бер:",
         "ask_photo": "Анкетаңа сүрөтүңдү жөнөт:",
         "done": "Анкета даяр! 🎉",
-        "match": "🎉 МЭТЧ! Тил табыштыңар! Байланышка чыккыла."
+        "match": "🎉 МЭТЧ! Тил табыштыңар!"
     }
 }
 
@@ -101,7 +101,7 @@ def get_main_kb():
     builder.add(KeyboardButton(text="🗑 Удалить профиль"))
     builder.add(KeyboardButton(text="⚙️ Сменить стиль бота"))
     builder.add(KeyboardButton(text="📩 Связь с админом"))
-    builder.add(KeyboardButton(text="👑 Я админ")) # <--- НОВАЯ КНОПКА
+    builder.add(KeyboardButton(text="👑 Я админ")) 
     return builder.as_markup(resize_keyboard=True)
 
 def get_style_kb():
@@ -114,7 +114,18 @@ def get_style_kb():
     ])
     return kb
 
-# --- ВХОД В АДМИНКУ ЧЕРЕЗ КНОПКУ ---
+@dp.message(CommandStart())
+async def cmd_start(message: types.Message, state: FSMContext):
+    await state.clear()
+    if message.from_user.id not in user_bot_style:
+        await message.answer("Выбери, как со мной общаться:", reply_markup=get_style_kb())
+    else:
+        await message.answer(
+            get_text(message.from_user.id, "start", name=message.from_user.first_name),
+            reply_markup=get_main_kb()
+        )
+
+# --- ВХОД В АДМИНКУ ---
 @dp.message(F.text == "👑 Я админ")
 async def start_admin_login(message: types.Message, state: FSMContext):
     await message.answer("Введи секретный код доступа:", reply_markup=ReplyKeyboardRemove())
@@ -126,19 +137,8 @@ async def process_admin_code(message: types.Message, state: FSMContext):
         ADMIN_IDS.add(message.from_user.id)
         await message.answer("✅ Код верный! Теперь тебе будут приходить сообщения из кнопки 'Связь с админом'.", reply_markup=get_main_kb())
     else:
-        await message.answer("❌ Неверный код. Попробуй еще раз или нажми /start для отмены.", reply_markup=get_main_kb())
+        await message.answer("❌ Неверный код. Попробуй еще раз или нажми /start.", reply_markup=get_main_kb())
     await state.clear()
-
-@dp.message(CommandStart())
-async def cmd_start(message: types.Message, state: FSMContext):
-    await state.clear()
-    if message.from_user.id not in user_bot_style:
-        await message.answer("Выбери, как со мной общаться:", reply_markup=get_style_kb())
-    else:
-        await message.answer(
-            get_text(message.from_user.id, "start", name=message.from_user.first_name),
-            reply_markup=get_main_kb()
-        )
 
 @dp.message(F.text == "⚙️ Сменить стиль бота")
 async def change_style_cmd(message: types.Message):
@@ -158,7 +158,12 @@ async def set_style(callback: CallbackQuery):
 # --- СВЯЗЬ С АДМИНОМ ---
 @dp.message(F.text == "📩 Связь с админом")
 async def start_support(message: types.Message, state: FSMContext):
-    await message.answer("Напиши свой вопрос или проблему одним сообщением. Я передам его админам. (Чтобы отменить, напиши /start)", reply_markup=ReplyKeyboardRemove())
+    await message.answer(
+        "📩 <b>Анонимная связь с админами</b>\n\n"
+        "Пиши сюда любые вопросы! Это может быть вопрос по учебе, просьба о помощи, жалоба на баг или просто предложение.\n"
+        "Все строго анонимно, мы не увидим твое имя.",
+        reply_markup=ReplyKeyboardRemove(), parse_mode="HTML"
+    )
     await state.set_state(SupportForm.waiting_for_msg)
 
 @dp.message(SupportForm.waiting_for_msg, F.chat.type == "private")
@@ -259,7 +264,7 @@ async def delete_profile(message: types.Message):
         del users_db[message.from_user.id]
         await message.answer("Твоя анкета удалена.", reply_markup=get_main_kb())
 
-# --- СВАЙПЫ ---
+# --- СВАЙПЫ И МЭТЧИ ---
 @dp.message(F.text == "🔍 Искать пару")
 async def search_profile(message: types.Message):
     my_id = message.from_user.id
@@ -285,16 +290,63 @@ async def search_profile(message: types.Message):
 async def process_like(callback: CallbackQuery):
     my_id = callback.from_user.id
     target_id = int(callback.data.split("_")[1])
+    
     swiped_db[my_id].append(target_id)
     if my_id not in likes_db: likes_db[my_id] = []
     likes_db[my_id].append(target_id)
+    
     if target_id in likes_db and my_id in likes_db[target_id]:
+        # МЭТЧ!
         await callback.message.edit_caption(caption=get_text(my_id, "match"))
+        
+        # Кнопка "Поделиться юзернеймом" для обоих
+        kb_share = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🤝 Показать мой @username", callback_data=f"share_{target_id}")]
+        ])
+        
         try:
-            await bot.send_message(target_id, get_text(target_id, "match"))
+            await bot.send_message(
+                target_id, 
+                get_text(target_id, "match") + "\n\nХочешь пообщаться? Нажми кнопку ниже, чтобы показать свой юзернейм!",
+                reply_markup=kb_share
+            )
         except: pass
+        
+        await callback.message.answer(
+            "Хочешь пообщаться? Нажми кнопку ниже, чтобы показать свой юзернейм!",
+            reply_markup=kb_share
+        )
     else:
         await callback.message.edit_caption(caption="Ты лайкнул анкету! 😉")
+    
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("share_"))
+async def process_share_username(callback: CallbackQuery):
+    target_id = int(callback.data.split("_")[1])
+    my_id = callback.from_user.id
+    
+    # Проверяем, есть ли юзернейм
+    if not callback.from_user.username:
+        await callback.answer("У тебя нет юзернейма в Телеграме! Зайди в настройки профиля, создай его и попробуй снова.", show_alert=True)
+        return
+        
+    my_name = users_db.get(my_id, {}).get("name", "Кто-то")
+    my_username = f"@{callback.from_user.username}"
+    
+    try:
+        await bot.send_message(
+            target_id, 
+            f"🎉 <b>У вас взаимная симпатия!</b>\n\n"
+            f"Пользователь <b>{my_name}</b> хочет с тобой пообщаться.\n"
+            f"Вот его юзернейм: {my_username}\n"
+            f"Скорее пиши ему в личку! 😉",
+            parse_mode="HTML"
+        )
+        await callback.message.edit_text("✅ Твой юзернейм отправлен партнеру! Жди сообщения.")
+    except Exception as e:
+        await callback.message.edit_text("Не удалось отправить. Возможно, пользователь заблокировал бота.")
+    
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("dis_"))
@@ -306,7 +358,7 @@ async def process_dislike(callback: CallbackQuery):
     await callback.answer()
 
 async def main():
-    print("Лицейский Мэтч (с кнопкой админа) запущен!")
+    print("Лицейский Мэтч (с обменом контактами) запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
